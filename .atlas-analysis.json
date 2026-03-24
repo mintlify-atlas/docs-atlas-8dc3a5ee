@@ -1,0 +1,88 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "terraform-aws-wafv2",
+  "projectDescription": "A Terraform module that creates and configures AWS WAFv2 Web ACLs with managed rule sets, IP blocking, rate limiting, and ALB/CloudFront integration.",
+  "theme": "aspen",
+  "primaryColor": "#594ed8",
+  "lightColor": "#acacf4",
+  "darkColor": "#040404",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/cloudfront",
+              "guides/alb",
+              "guides/ip-blocking",
+              "guides/rate-limiting",
+              "guides/logging",
+              "guides/managed-rules"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/overview",
+              "security/rule-groups"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Module Reference",
+            "pages": [
+              "reference/inputs",
+              "reference/outputs",
+              "reference/resources"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "reference/examples"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "AWS WAFv2 Web ACL creation and management",
+    "AWS Managed Rule Sets (CommonRuleSet, SQLi, IP Reputation, etc.)",
+    "ALB (Application Load Balancer) association",
+    "CloudFront distribution protection",
+    "IP Set blocking for specific addresses and ranges",
+    "Global IP rate-based limiting",
+    "URL-scoped rate-based limiting",
+    "HTTP header filtering rules",
+    "Custom WAFv2 Rule Group support",
+    "CloudWatch logging integration"
+  ],
+  "publicApiSurface": [
+    "var.name",
+    "var.scope",
+    "var.managed_rules",
+    "var.ip_sets_rule",
+    "var.ip_rate_based_rule",
+    "var.ip_rate_url_based_rules",
+    "var.filtered_header_rule",
+    "var.group_rules",
+    "var.associate_alb",
+    "var.alb_arn",
+    "var.enable_logging",
+    "var.log_destination_arns",
+    "var.default_action",
+    "var.tags",
+    "output.web_acl_id"
+  ]
+}
