@@ -75,16 +75,26 @@ module "wafv2" {
     }
   ]
 
+  # filtered_header_rule generates one rule per header_type at (priority + index + 1).
+  # With priority = 3 and two header_types, rules are created at priorities 4 and 5.
+  filtered_header_rule = {
+    header_types  = ["internal-user", "api-client"]
+    header_value  = "x-app-client"
+    priority      = 3
+    action        = "allow"
+    search_string = ""
+  }
+
   ip_sets_rule = [
     {
       name       = "monitored-ips"
-      priority   = 5
+      priority   = 10
       action     = "count"
       ip_set_arn = aws_wafv2_ip_set.ipset.arn
     },
     {
       name       = "block-all-ips"
-      priority   = 6
+      priority   = 20
       action     = "block"
       ip_set_arn = aws_wafv2_ip_set.block_all_ips.arn
     }
@@ -92,7 +102,7 @@ module "wafv2" {
 
   ip_rate_based_rule = {
     name     = "ip-rate-limit"
-    priority = 7
+    priority = 30
     action   = "block"
     limit    = 100
   }
@@ -100,7 +110,7 @@ module "wafv2" {
   ip_rate_url_based_rules = [
     {
       name                  = "ip-rate-foo-limit"
-      priority              = 8
+      priority              = 40
       action                = "block"
       limit                 = 100
       search_string         = "/foo/"
@@ -108,7 +118,7 @@ module "wafv2" {
     },
     {
       name                  = "ip-rate-bar-limit"
-      priority              = 9
+      priority              = 50
       action                = "block"
       search_string         = "/bar/"
       positional_constraint = "STARTS_WITH"
@@ -121,12 +131,12 @@ module "wafv2" {
       name            = aws_wafv2_rule_group.block_countries.name
       arn             = aws_wafv2_rule_group.block_countries.arn
       override_action = "none"
-      priority        = 11
+      priority        = 60
     }
   ]
 }
 ```
 
 <Note>
-  Rule priorities must be unique within the Web ACL. Lower numbers are evaluated first.
+  Rule priorities must be unique within the Web ACL. Lower numbers are evaluated first. The `filtered_header_rule` variable generates one rule per entry in `header_types`, assigning priorities starting at `priority + 1` and incrementing by one per header type — so plan your priority numbering to leave room.
 </Note>
