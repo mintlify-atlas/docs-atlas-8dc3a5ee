@@ -1,0 +1,60 @@
+---
+title: "AWS resources created"
+description: "AWS resources provisioned by the terraform-aws-wafv2 module"
+---
+
+## Summary
+
+| Resource | Type | Created when |
+|---|---|---|
+| `aws_wafv2_web_acl.main` | [aws_wafv2_web_acl](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafv2_web_acl) | Always |
+| `aws_wafv2_web_acl_association.main` | [aws_wafv2_web_acl_association](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafv2_web_acl_association) | `associate_alb = true` |
+| `aws_wafv2_web_acl_logging_configuration.main` | [aws_wafv2_web_acl_logging_configuration](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/wafv2_web_acl_logging_configuration) | `enable_logging = true` |
+
+## Resource details
+
+### aws_wafv2_web_acl
+
+The core Web ACL resource. Always created.
+
+| Attribute | Value |
+|---|---|
+| `name` | `var.name` |
+| `scope` | `var.scope` |
+| `default_action` | `allow` or `block` based on `var.default_action` |
+| `tags` | `var.tags` |
+
+All rules — managed, IP set, rate-based, header, and group rules — are attached to this single resource as dynamic rule blocks. Every rule has CloudWatch metrics and sampled requests enabled, using the rule name as the CloudWatch metric name.
+
+### aws_wafv2_web_acl_association
+
+Associates the Web ACL with an Application Load Balancer. Created only when `associate_alb = true`.
+
+| Attribute | Value |
+|---|---|
+| `resource_arn` | `var.alb_arn` |
+| `web_acl_arn` | ARN of `aws_wafv2_web_acl.main` |
+
+<Note>
+  A Web ACL can be associated with multiple resource types, but each individual resource (ALB, API Gateway stage, etc.) can only be associated with one Web ACL at a time. This module manages a single ALB association. For additional associations, use the `aws_wafv2_web_acl_association` resource directly outside this module.
+</Note>
+
+### aws_wafv2_web_acl_logging_configuration
+
+Configures log delivery for the Web ACL. Created only when `enable_logging = true`.
+
+| Attribute | Value |
+|---|---|
+| `resource_arn` | ARN of `aws_wafv2_web_acl.main` |
+| `log_destination_configs` | `var.log_destination_arns` |
+
+Supported destination types: Kinesis Data Firehose delivery streams, CloudWatch Logs log groups, and S3 buckets. CloudWatch Logs log group names must begin with `aws-waf-logs-`.
+
+## Provider requirements
+
+| Requirement | Minimum version |
+|---|---|
+| Terraform | `>= 1.0` |
+| `hashicorp/aws` | `>= 5.0` |
+
+When `scope = "CLOUDFRONT"`, the AWS provider must be configured for the `us-east-1` region. Pass an aliased provider using the `providers` argument on the module block.

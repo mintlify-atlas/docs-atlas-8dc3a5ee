@@ -1,0 +1,104 @@
+---
+title: "Rate limiting with WAFv2"
+description: "How to use ip_rate_based_rule and ip_rate_url_based_rules to throttle or block clients that send too many requests."
+---
+
+Rate-based rules track the number of requests that arrive from each originating IP address over a rolling 5-minute window. When the count exceeds the configured `limit`, the rule action — typically `block` — is applied. The module supports two types of rate-based rules:
+
+1. **Global IP rate limiting** (`ip_rate_based_rule`) — applies to all requests from an IP, regardless of URL.
+2. **URL-scoped IP rate limiting** (`ip_rate_url_based_rules`) — applies only when the request URI matches a specific pattern.
+
+## Global IP rate limiting
+
+Use `ip_rate_based_rule` to limit the total request rate from any single IP across your entire application. This variable accepts a single object (not a list):
+
+```hcl
+ip_rate_based_rule = {
+  name     = "ip-rate-limit"
+  priority = 7
+  action   = "block"
+  limit    = 100
+}
+```
+
+### Attributes
+
+| Attribute | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | A unique name for the rule. |
+| `priority` | `number` | Yes | Evaluation order within the Web ACL. Must be unique. |
+| `limit` | `number` | Yes | Maximum number of requests from a single IP in any 5-minute window before the action triggers. |
+| `action` | `string` | Yes | `"block"` or `"count"`. |
+| `response_code` | `number` | No | HTTP status code returned when `action = "block"`. Defaults to `403`. |
+
+<Note>
+  Set `ip_rate_based_rule = null` (the default) to disable this rule entirely.
+</Note>
+
+## URL-scoped IP rate limiting
+
+Use `ip_rate_url_based_rules` to apply separate rate limits per URL path. Each rule narrows the rate count to requests whose URI matches a `search_string` using a `positional_constraint`.
+
+```hcl
+ip_rate_url_based_rules = [
+  {
+    name                  = "ip-rate-foo-limit"
+    priority              = 8
+    action                = "block"
+    limit                 = 100
+    search_string         = "/foo/"
+    positional_constraint = "STARTS_WITH"
+  },
+  {
+    name                  = "ip-rate-bar-limit"
+    priority              = 9
+    action                = "block"
+    search_string         = "/bar/"
+    positional_constraint = "STARTS_WITH"
+    limit                 = 200
+  }
+]
+```
+
+### Attributes
+
+| Attribute | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | A unique name for the rule. |
+| `priority` | `number` | Yes | Evaluation order within the Web ACL. Must be unique. |
+| `limit` | `number` | Yes | Maximum requests from a single IP matching the URL pattern in any 5-minute window. |
+| `action` | `string` | Yes | `"block"`, `"allow"`, or `"count"`. |
+| `search_string` | `string` | Yes | The URI string to match against. |
+| `positional_constraint` | `string` | Yes | How to compare the URI against `search_string`. See below. |
+| `response_code` | `number` | No | HTTP status code returned when `action = "block"`. Defaults to `403`. |
+
+### Positional constraint values
+
+| Value | Description |
+|---|---|
+| `STARTS_WITH` | The URI must begin with `search_string`. |
+| `ENDS_WITH` | The URI must end with `search_string`. |
+| `CONTAINS` | The URI must contain `search_string` anywhere. |
+| `EXACTLY` | The URI must exactly equal `search_string`. |
+
+<Tip>
+  Use `STARTS_WITH` to protect an entire path prefix (e.g., `/api/`) and `EXACTLY` when you need to rate-limit a single endpoint.
+</Tip>
+
+## Overriding the default response code
+
+Both rule types default to returning `403 Forbidden` when blocking. Override this with `response_code`:
+
+```hcl
+ip_rate_based_rule = {
+  name          = "ip-rate-limit"
+  priority      = 7
+  action        = "block"
+  limit         = 100
+  response_code = 429
+}
+```
+
+<Note>
+  The URI match in URL-based rules uses `URL_DECODE` text transformation before comparison, so percent-encoded characters in the path are normalized automatically.
+</Note>

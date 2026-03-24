@@ -1,0 +1,116 @@
+---
+title: Introduction
+description: Learn what AWS WAFv2 is, what this Terraform module does, and when to use it.
+---
+
+This module provisions an AWS WAFv2 Web ACL and optionally associates it with an Application Load Balancer (ALB) or configures log delivery. It is designed to get a hardened, production-ready WAF in place with minimal configuration.
+
+## What is AWS WAFv2?
+
+AWS WAFv2 is a web application firewall that lets you monitor and control HTTP/HTTPS requests forwarded to your AWS resources. It inspects incoming traffic against a set of rules and either allows, blocks, or counts requests based on conditions you define.
+
+Common use cases include:
+
+- Blocking known malicious IP addresses and botnets
+- Protecting against SQL injection and cross-site scripting (XSS)
+- Rate-limiting abusive clients
+- Enforcing geo-restrictions
+- Filtering requests by HTTP headers or URI patterns
+
+<Note>
+  WAFv2 replaces the original AWS WAF (Classic). New deployments should always use WAFv2.
+</Note>
+
+## What this module creates
+
+The module always creates one resource and conditionally creates two more:
+
+<CardGroup cols={2}>
+  <Card title="Web ACL" icon="shield">
+    An `aws_wafv2_web_acl` resource named after the `name` variable. All rule configuration lives here.
+  </Card>
+  <Card title="ALB association" icon="link">
+    An `aws_wafv2_web_acl_association` resource, created only when `associate_alb = true`. Attaches the Web ACL to an existing ALB.
+  </Card>
+  <Card title="Logging configuration" icon="file-text">
+    An `aws_wafv2_web_acl_logging_configuration` resource, created only when `enable_logging = true`. Sends WAF logs to Kinesis Data Firehose, CloudWatch Logs, or S3.
+  </Card>
+  <Card title="CloudWatch metrics" icon="chart-bar">
+    Sampled requests and CloudWatch metrics are enabled by default on the Web ACL and every rule. No extra configuration required.
+  </Card>
+</CardGroup>
+
+## Default behavior
+
+When you deploy the module with only `name` and `scope`, it applies **6 AWS Managed Rule Sets** in priority order and falls through to an **allow** default action for any request that does not match a rule.
+
+| Priority | Rule set | Purpose |
+|----------|----------|---------|
+| 10 | `AWSManagedRulesCommonRuleSet` | Core rule set — OWASP Top 10 |
+| 20 | `AWSManagedRulesAmazonIpReputationList` | Known malicious IPs and botnets |
+| 30 | `AWSManagedRulesKnownBadInputsRuleSet` | Exploits and known bad inputs |
+| 40 | `AWSManagedRulesSQLiRuleSet` | SQL injection attacks |
+| 50 | `AWSManagedRulesLinuxRuleSet` | Linux-specific exploits |
+| 60 | `AWSManagedRulesUnixRuleSet` | POSIX/Unix-specific exploits |
+
+Each rule set uses `override_action = "none"`, meaning each rule within the set enforces its own configured action (typically `block`). You can override the action to `count` for any rule set to observe traffic without blocking.
+
+<Warning>
+  The default `default_action = "allow"` passes any request that does not match a rule. If you want a deny-by-default posture, set `default_action = "block"` and explicitly allow traffic using IP set rules or other allow rules.
+</Warning>
+
+## REGIONAL vs CLOUDFRONT scope
+
+You must set `scope` to one of two values. The correct choice depends on which AWS resource you are protecting.
+
+<Tabs>
+  <Tab title="REGIONAL">
+    Use `REGIONAL` when you are protecting resources that are deployed in a specific AWS region:
+
+    - Application Load Balancers (ALB)
+    - Amazon API Gateway REST APIs
+    - AWS AppSync GraphQL APIs
+    - Amazon Cognito user pools
+    - AWS App Runner services
+    - AWS Verified Access instances
+
+    The Web ACL is created in the same region as your AWS provider configuration. You can associate it with an ALB in that region using `associate_alb = true`.
+  </Tab>
+  <Tab title="CLOUDFRONT">
+    Use `CLOUDFRONT` when you are protecting a CloudFront distribution.
+
+    CloudFront is a global service, and AWS requires that all WAFv2 Web ACLs with `scope = "CLOUDFRONT"` be created in the **us-east-1** region, regardless of where your other infrastructure lives.
+
+    You reference the Web ACL ARN in your CloudFront distribution's `web_acl_id` argument.
+
+    <Warning>
+      Deploying a `CLOUDFRONT`-scoped Web ACL in any region other than `us-east-1` will result in an error from the AWS API. Use a provider alias to ensure the resource is created in the correct region.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Requirements
+
+| Requirement | Minimum version |
+|-------------|-----------------|
+| Terraform | >= 1.0 |
+| AWS provider (`hashicorp/aws`) | >= 5.0 |
+
+The module is declared in `versions.tf`:
+
+```hcl versions.tf
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.0"
+    }
+  }
+}
+```
+
+## Next steps
+
+See the [Quickstart](/quickstart) to deploy your first Web ACL in minutes.

@@ -1,0 +1,209 @@
+---
+title: "Custom rule groups"
+description: "Using custom WAFv2 Rule Groups with terraform-aws-wafv2"
+---
+
+## What are rule groups
+
+A WAFv2 rule group is a reusable collection of WAF rules that can be referenced from multiple Web ACLs. Instead of duplicating the same rules across every Web ACL in your account, you define the rules once in a rule group and attach it wherever needed.
+
+Rule groups are useful when:
+
+- The same blocking logic (e.g., geo-blocking, user-agent filtering) applies to more than one Web ACL
+- You want to version-control rules independently from the Web ACL configuration
+- Teams own different sets of rules and need to manage them separately
+
+The `terraform-aws-wafv2` module supports attaching existing rule groups via the `group_rules` variable.
+
+## The group_rules variable
+
+Each entry in `group_rules` references a pre-existing `aws_wafv2_rule_group` resource by ARN.
+
+```hcl
+group_rules = list(object({
+  name            = string
+  arn             = string
+  priority        = number
+  override_action = string
+}))
+```
+
+| Field | Description |
+|---|---|
+| `name` | Display name for the rule group reference within the Web ACL. |
+| `arn` | ARN of the `aws_wafv2_rule_group` resource to attach. |
+| `priority` | Evaluation order within the Web ACL. Lower numbers are evaluated first. |
+| `override_action` | `"none"` to enforce rules, `"count"` to monitor only. |
+
+<Note>
+The `group_rules` variable defaults to an empty list. Rule groups are not attached unless you explicitly provide them.
+</Note>
+
+## Creating a rule group
+
+Define the rule group as a separate Terraform resource before referencing it in the module. The following example creates a rule group that blocks requests originating from a specific country.
+
+```hcl
+resource "aws_wafv2_rule_group" "block_countries" {
+  name     = "rule_group_example"
+  scope    = "REGIONAL"
+  capacity = 1
+
+  rule {
+    name     = "rule-1"
+    priority = 1
+
+    action {
+      block {}
+    }
+
+    statement {
+      geo_match_statement {
+        country_codes = ["UA"]
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = false
+      metric_name                = "friendly-rule-metric-name"
+      sampled_requests_enabled   = false
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = false
+    metric_name                = "friendly-metric-name"
+    sampled_requests_enabled   = false
+  }
+}
+```
+
+<Note>
+The `scope` on the rule group must match the `scope` of the Web ACL. Use `REGIONAL` for ALB and API Gateway, and `CLOUDFRONT` for CloudFront distributions.
+</Note>
+
+## Attaching the rule group to the module
+
+Pass the rule group to the module using the `group_rules` variable. Reference the rule group resource directly so Terraform tracks the dependency automatically.
+
+```hcl
+module "wafv2" {
+  source = "trussworks/wafv2/aws"
+  name   = "my-waf"
+  scope  = "REGIONAL"
+
+  group_rules = [
+    {
+      name            = aws_wafv2_rule_group.block_countries.name
+      arn             = aws_wafv2_rule_group.block_countries.arn
+      override_action = "none"
+      priority        = 11
+    }
+  ]
+}
+```
+
+You can attach multiple rule groups by adding more objects to the list. Each must have a unique `priority` value that does not conflict with other rules in the Web ACL.
+
+## override_action
+
+The `override_action` field controls whether the rule group's actions are enforced or only counted.
+
+| Value | Behavior |
+|---|---|
+| `"none"` | Rules are enforced. Matching requests are blocked, allowed, or counted according to each rule's own action. |
+| `"count"` | All rule actions are overridden to count. Matching requests are logged but never blocked. |
+
+<Tip>
+Use `override_action = "count"` when first attaching a rule group in production. Review CloudWatch metrics and sampled requests to confirm there are no false positives before switching to `"none"`.
+</Tip>
+
+<CodeGroup>
+
+```hcl Enforce (none)
+group_rules = [
+  {
+    name            = aws_wafv2_rule_group.block_countries.name
+    arn             = aws_wafv2_rule_group.block_countries.arn
+    override_action = "none"
+    priority        = 11
+  }
+]
+```
+
+```hcl Monitor only (count)
+group_rules = [
+  {
+    name            = aws_wafv2_rule_group.block_countries.name
+    arn             = aws_wafv2_rule_group.block_countries.arn
+    override_action = "count"
+    priority        = 11
+  }
+]
+```
+
+</CodeGroup>
+
+## Capacity units
+
+WAFv2 uses Web ACL Capacity Units (WCUs) to measure the processing cost of rules. Every Web ACL has a default capacity limit of 1,500 WCUs.
+
+When you attach a rule group, its declared `capacity` counts against the Web ACL's total WCU budget. For example, the `block_countries` rule group above declares `capacity = 1` — a geo match statement costs 1 WCU. More complex statements (byte match, regex, rate-based) consume more WCUs.
+
+<Note>
+If adding a rule group would exceed the 1,500 WCU limit, Terraform will return an error during `apply`. Review the WCU cost of each rule group and request a quota increase from AWS Support if needed.
+</Note>
+
+To check the WCU consumption of a rule group before attaching it:
+
+```bash
+aws wafv2 check-capacity \
+  --scope REGIONAL \
+  --rules file://rules.json
+```
+
+## Use cases for rule groups
+
+### Geo-blocking specific countries
+
+Combine multiple geo-match statements in a single rule group to block traffic from a defined list of countries, then attach the group to every Web ACL in your account without duplicating rules.
+
+### Custom business logic
+
+Block requests based on specific user agents, header values, or URI patterns that are unique to your application. Encoding this logic in a rule group keeps it separate from the managed rule configuration and makes it easier to audit.
+
+### Shared rules across multiple Web ACLs
+
+A single rule group resource can be referenced by many Web ACL module instances. This is useful for organisation-wide policies (e.g., blocking a known list of malicious IPs) that must be consistently applied across all applications.
+
+```hcl
+module "wafv2_api" {
+  source = "trussworks/wafv2/aws"
+  name   = "api-waf"
+  scope  = "REGIONAL"
+
+  group_rules = [{
+    name            = aws_wafv2_rule_group.org_policy.name
+    arn             = aws_wafv2_rule_group.org_policy.arn
+    override_action = "none"
+    priority        = 5
+  }]
+}
+
+module "wafv2_web" {
+  source = "trussworks/wafv2/aws"
+  name   = "web-waf"
+  scope  = "REGIONAL"
+
+  group_rules = [{
+    name            = aws_wafv2_rule_group.org_policy.name
+    arn             = aws_wafv2_rule_group.org_policy.arn
+    override_action = "none"
+    priority        = 5
+  }]
+}
+```
+
+### Environment-specific rule sets
+
+Create separate rule groups per environment (e.g., `dev`, `staging`, `production`) with different country lists, IP ranges, or action modes. Reference the appropriate group in each environment's module call.

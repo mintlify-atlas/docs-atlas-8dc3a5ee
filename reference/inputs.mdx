@@ -1,0 +1,208 @@
+---
+title: "Module inputs"
+description: "Complete reference for all terraform-aws-wafv2 input variables"
+---
+
+## Required
+
+<ParamField path="name" type="string" required>
+  A friendly name of the WebACL.
+</ParamField>
+
+<ParamField path="scope" type="string" required>
+  The scope of this Web ACL. Valid values: `CLOUDFRONT`, `REGIONAL`.
+
+  Use `CLOUDFRONT` when associating the Web ACL with a CloudFront distribution. The provider must be configured for `us-east-1` in that case. Use `REGIONAL` for ALBs, API Gateway, and AppSync.
+</ParamField>
+
+## Web ACL configuration
+
+<ParamField path="default_action" type="string" default="allow">
+  The action to perform if none of the rules contained in the WebACL match. Valid values: `allow`, `block`.
+</ParamField>
+
+## Rule configuration
+
+<ParamField path="managed_rules" type="object[]">
+  List of AWS Managed WAF rules to attach to the Web ACL. Defaults to six AWS managed rule groups:
+
+  - `AWSManagedRulesCommonRuleSet` (priority 10)
+  - `AWSManagedRulesAmazonIpReputationList` (priority 20)
+  - `AWSManagedRulesKnownBadInputsRuleSet` (priority 30)
+  - `AWSManagedRulesSQLiRuleSet` (priority 40)
+  - `AWSManagedRulesLinuxRuleSet` (priority 50)
+  - `AWSManagedRulesUnixRuleSet` (priority 60)
+
+  <Expandable title="object fields">
+    <ParamField path="name" type="string" required>
+      Name of the managed rule group (e.g., `AWSManagedRulesCommonRuleSet`).
+    </ParamField>
+    <ParamField path="priority" type="number" required>
+      Relative processing order for this rule. Lower values are evaluated first. Must be unique across all rules in the Web ACL.
+    </ParamField>
+    <ParamField path="override_action" type="string" required>
+      Override action applied to all rules in the managed group. Valid values: `none`, `count`.
+    </ParamField>
+    <ParamField path="vendor_name" type="string" required>
+      Name of the managed rule group vendor (e.g., `AWS`).
+    </ParamField>
+    <ParamField path="version" type="string">
+      Version of the managed rule group to use. When omitted, WAF uses the latest version.
+    </ParamField>
+    <ParamField path="rule_action_override" type="object[]" required>
+      List of overrides for individual rules within the managed group. Pass an empty list (`[]`) to use each rule's default action.
+
+      <Expandable title="object fields">
+        <ParamField path="name" type="string" required>
+          Name of the individual rule to override.
+        </ParamField>
+        <ParamField path="action_to_use" type="string" required>
+          Action to apply instead of the rule's default. Valid values: `allow`, `block`, `count`.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="ip_sets_rule" type="object[]" default="[]">
+  Rules that match web requests from specific IP addresses or address ranges, each referencing an existing `aws_wafv2_ip_set` resource.
+
+  <Expandable title="object fields">
+    <ParamField path="name" type="string" required>
+      Name for this rule.
+    </ParamField>
+    <ParamField path="priority" type="number" required>
+      Relative processing order. Must be unique across all rules in the Web ACL.
+    </ParamField>
+    <ParamField path="ip_set_arn" type="string" required>
+      ARN of the `aws_wafv2_ip_set` resource to reference.
+    </ParamField>
+    <ParamField path="action" type="string" required>
+      Action to take when the rule matches. Valid values: `allow`, `block`, `count`.
+    </ParamField>
+    <ParamField path="response_code" type="number" default="403">
+      HTTP response code returned when `action` is `block` and a custom response is required. Only applied when the value differs from `403`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="ip_rate_based_rule" type="object" default="null">
+  A single global IP rate-based rule. Tracks the request rate for each originating IP and triggers the rule action when the rate exceeds `limit` within any 5-minute window. Set to `null` (the default) to disable.
+
+  <Expandable title="object fields">
+    <ParamField path="name" type="string" required>
+      Name for this rule.
+    </ParamField>
+    <ParamField path="priority" type="number" required>
+      Relative processing order. Must be unique across all rules in the Web ACL.
+    </ParamField>
+    <ParamField path="limit" type="number" required>
+      Maximum number of requests allowed from a single IP in any 5-minute window before the action is triggered.
+    </ParamField>
+    <ParamField path="action" type="string" required>
+      Action to take when the rate limit is exceeded. Valid values: `block`, `count`.
+    </ParamField>
+    <ParamField path="response_code" type="number" default="403">
+      HTTP response code returned on block. Only applied when the value differs from `403`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="ip_rate_url_based_rules" type="object[]" default="[]">
+  URL-scoped IP rate-based rules. Each rule behaves like `ip_rate_based_rule` but restricts the rate tracking to requests whose URI path matches a given string pattern.
+
+  <Expandable title="object fields">
+    <ParamField path="name" type="string" required>
+      Name for this rule.
+    </ParamField>
+    <ParamField path="priority" type="number" required>
+      Relative processing order. Must be unique across all rules in the Web ACL.
+    </ParamField>
+    <ParamField path="limit" type="number" required>
+      Maximum number of matching requests allowed from a single IP in any 5-minute window.
+    </ParamField>
+    <ParamField path="action" type="string" required>
+      Action to take when the rate limit is exceeded. Valid values: `allow`, `block`, `count`.
+    </ParamField>
+    <ParamField path="response_code" type="number" default="403">
+      HTTP response code returned on block. Only applied when the value differs from `403`.
+    </ParamField>
+    <ParamField path="search_string" type="string" required>
+      String to match against the URI path (after URL decoding).
+    </ParamField>
+    <ParamField path="positional_constraint" type="string" required>
+      How to match `search_string` against the URI path. Valid values: `EXACTLY`, `STARTS_WITH`, `ENDS_WITH`, `CONTAINS`, `CONTAINS_WORD`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="filtered_header_rule" type="object">
+  HTTP header filtering rule. Generates one rule per entry in `header_types`, using an exact byte-match against the specified header. Defaults to an empty `header_types` list (no rules created).
+
+  <Expandable title="object fields">
+    <ParamField path="header_types" type="string[]" required>
+      List of header names to create rules for. One rule is created per entry, with priority incrementing from the base `priority` value.
+    </ParamField>
+    <ParamField path="priority" type="number" required>
+      Base priority. The first header rule receives `priority + 1`, the second `priority + 2`, and so on.
+    </ParamField>
+    <ParamField path="header_value" type="string" required>
+      Name of the HTTP header to inspect (e.g., `host`).
+    </ParamField>
+    <ParamField path="action" type="string" required>
+      Action to take when the header matches. Valid values: `allow`, `block`, `count`.
+    </ParamField>
+    <ParamField path="search_string" type="string" required>
+      String to match against the header value. When empty, the header name itself is used as the match string.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="group_rules" type="object[]" default="[]">
+  Custom WAFv2 rule groups to attach to the Web ACL. Each entry references an existing `aws_wafv2_rule_group` resource by ARN.
+
+  <Expandable title="object fields">
+    <ParamField path="name" type="string" required>
+      Name for this rule (typically the rule group name).
+    </ParamField>
+    <ParamField path="arn" type="string" required>
+      ARN of the `aws_wafv2_rule_group` resource.
+    </ParamField>
+    <ParamField path="priority" type="number" required>
+      Relative processing order. Must be unique across all rules in the Web ACL.
+    </ParamField>
+    <ParamField path="override_action" type="string" required>
+      Override action applied to all rules in the group. Valid values: `none`, `count`.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## ALB integration
+
+<ParamField path="associate_alb" type="boolean" default="false">
+  When `true`, creates an `aws_wafv2_web_acl_association` resource to attach the Web ACL to the ALB specified by `alb_arn`.
+</ParamField>
+
+<ParamField path="alb_arn" type="string" default='""'>
+  ARN of the Application Load Balancer to associate with the Web ACL. Required when `associate_alb` is `true`.
+</ParamField>
+
+## Logging
+
+<ParamField path="enable_logging" type="boolean" default="false">
+  When `true`, creates an `aws_wafv2_web_acl_logging_configuration` resource using the destinations in `log_destination_arns`.
+</ParamField>
+
+<ParamField path="log_destination_arns" type="string[]" default="[]">
+  ARNs of log destinations to associate with the Web ACL. Supported destination types: Amazon Kinesis Data Firehose delivery streams, CloudWatch Logs log groups, and S3 buckets.
+
+  <Note>
+    CloudWatch Logs log group names must begin with `aws-waf-logs-` to be accepted by the WAFv2 logging API.
+  </Note>
+</ParamField>
+
+## Tags
+
+<ParamField path="tags" type="map(string)" default="{}">
+  Map of tags to assign to the `aws_wafv2_web_acl` resource.
+</ParamField>

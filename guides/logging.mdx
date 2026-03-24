@@ -1,0 +1,132 @@
+---
+title: "Configuring WAFv2 logging"
+description: "How to enable WAFv2 request logging and send logs to CloudWatch Logs, Kinesis Data Firehose, or S3."
+---
+
+Logging is optional and disabled by default. Set `enable_logging = true` and provide one or more destination ARNs in `log_destination_arns` to start capturing WAF request logs.
+
+The module supports three destination types:
+
+- **Amazon CloudWatch Logs** — log group ARN
+- **Amazon Kinesis Data Firehose** — delivery stream ARN
+- **Amazon S3** — bucket ARN
+
+<Tabs>
+  <Tab title="CloudWatch Logs">
+    Create a CloudWatch log group and pass its ARN to the module.
+
+    <Warning>
+      The CloudWatch log group name must start with `aws-waf-logs-`. WAF will reject any other name.
+    </Warning>
+
+    ```hcl
+    resource "aws_cloudwatch_log_group" "waf_logs" {
+      name              = "aws-waf-logs-alb-web-acl"
+      retention_in_days = 90
+    }
+
+    module "alb_wafv2" {
+      source  = "trussworks/wafv2/aws"
+      version = "0.0.1"
+
+      name  = "alb-web-acl"
+      scope = "REGIONAL"
+
+      enable_logging = true
+      log_destination_arns = [
+        aws_cloudwatch_log_group.waf_logs.arn
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="Kinesis Data Firehose">
+    Create a Kinesis Firehose delivery stream and pass its ARN to the module.
+
+    <Note>
+      The Kinesis Firehose stream name must start with `aws-waf-logs-`.
+    </Note>
+
+    ```hcl
+    resource "aws_kinesis_firehose_delivery_stream" "waf_logs" {
+      name        = "aws-waf-logs-alb-web-acl"
+      destination = "extended_s3"
+
+      extended_s3_configuration {
+        role_arn   = aws_iam_role.firehose.arn
+        bucket_arn = aws_s3_bucket.waf_logs.arn
+      }
+    }
+
+    module "alb_wafv2" {
+      source  = "trussworks/wafv2/aws"
+      version = "0.0.1"
+
+      name  = "alb-web-acl"
+      scope = "REGIONAL"
+
+      enable_logging = true
+      log_destination_arns = [
+        aws_kinesis_firehose_delivery_stream.waf_logs.arn
+      ]
+    }
+    ```
+  </Tab>
+  <Tab title="S3">
+    Pass an S3 bucket ARN directly. WAF will write log files into the bucket.
+
+    <Note>
+      The S3 bucket name must start with `aws-waf-logs-`.
+    </Note>
+
+    ```hcl
+    resource "aws_s3_bucket" "waf_logs" {
+      bucket = "aws-waf-logs-alb-web-acl-123456789"
+    }
+
+    module "alb_wafv2" {
+      source  = "trussworks/wafv2/aws"
+      version = "0.0.1"
+
+      name  = "alb-web-acl"
+      scope = "REGIONAL"
+
+      enable_logging = true
+      log_destination_arns = [
+        aws_s3_bucket.waf_logs.arn
+      ]
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## CloudFront logging
+
+For CloudFront-scoped Web ACLs, the same variables apply. Use the aliased `us-east-1` provider for both the WAF module and the log destination resource:
+
+```hcl
+resource "aws_cloudwatch_log_group" "waf_logs" {
+  provider          = aws.us-east-1
+  name              = "aws-waf-logs-cloudfront-web-acl"
+  retention_in_days = 90
+}
+
+module "cloudfront_wafv2" {
+  source  = "trussworks/wafv2/aws"
+  version = "0.0.1"
+  providers = {
+    aws = aws.us-east-1
+  }
+
+  name  = "cloudfront-web-acl"
+  scope = "CLOUDFRONT"
+
+  enable_logging = true
+  log_destination_arns = [
+    aws_cloudwatch_log_group.waf_logs.arn
+  ]
+}
+```
+
+<Tip>
+  Set a `retention_in_days` on your CloudWatch log group to avoid unbounded log storage costs. Common values are `30`, `60`, or `90` days.
+</Tip>

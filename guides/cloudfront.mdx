@@ -1,0 +1,67 @@
+---
+title: "Using WAFv2 with CloudFront"
+description: "How to deploy a WAFv2 Web ACL with CLOUDFRONT scope and attach it to a CloudFront distribution."
+---
+
+When you use WAFv2 to protect a CloudFront distribution, the Web ACL must be created with `scope = "CLOUDFRONT"`. CloudFront is a global service, and AWS requires all CLOUDFRONT-scoped Web ACLs to be provisioned in the `us-east-1` region regardless of where your other infrastructure lives.
+
+<Warning>
+  CloudFront WAF resources must be created in `us-east-1`. If your default AWS provider targets a different region, you must configure a provider alias for `us-east-1` and pass it to the module.
+</Warning>
+
+## Configure a provider alias
+
+Add a second `aws` provider block with an alias targeting `us-east-1`, then pass it to the module using the `providers` meta-argument:
+
+```hcl
+provider "aws" {
+  region = "us-west-2" # your default region
+}
+
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+}
+```
+
+## Deploy the Web ACL
+
+Pass the aliased provider to the module and set `scope = "CLOUDFRONT"`:
+
+```hcl
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+}
+
+module "cloudfront_wafv2" {
+  source  = "trussworks/wafv2/aws"
+  version = "0.0.1"
+  providers = {
+    aws = aws.us-east-1
+  }
+
+  name  = "cloudfront-web-acl"
+  scope = "CLOUDFRONT"
+}
+```
+
+<Note>
+  All other module variables — `managed_rules`, `ip_sets_rule`, `ip_rate_based_rule`, and so on — work the same way regardless of scope. Only the `scope` value and the provider region differ between CloudFront and regional deployments.
+</Note>
+
+## Attach the Web ACL to a CloudFront distribution
+
+The module exposes a `web_acl_id` output containing the ARN of the created Web ACL. Pass this value to the `web_acl_id` argument of your `aws_cloudfront_distribution` resource:
+
+```hcl
+resource "aws_cloudfront_distribution" "main" {
+  # ... other configuration ...
+
+  web_acl_id = module.cloudfront_wafv2.web_acl_id
+}
+```
+
+<Tip>
+  If you manage your CloudFront distribution in a separate Terraform root module or state file, you can pass the `web_acl_id` output through a remote state data source or a variable rather than referencing the module directly.
+</Tip>

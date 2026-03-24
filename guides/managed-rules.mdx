@@ -1,0 +1,118 @@
+---
+title: "AWS managed rule sets"
+description: "How to configure AWS Managed Rules in the WAFv2 module, including overrides, rule action overrides, and version pinning."
+---
+
+AWS Managed Rules are pre-built rule groups maintained by AWS that protect against common threats without requiring you to write individual rules. The module enables six rule groups by default.
+
+## Default rule sets
+
+The following rule groups are enabled when you do not set the `managed_rules` variable:
+
+| Priority | Name | Description |
+|---|---|---|
+| 10 | `AWSManagedRulesCommonRuleSet` | Core rule set (CRS) protecting against common web exploits such as XSS and path traversal. |
+| 20 | `AWSManagedRulesAmazonIpReputationList` | Blocks IP addresses flagged by Amazon threat intelligence as bots, scrapers, or known bad actors. |
+| 30 | `AWSManagedRulesKnownBadInputsRuleSet` | Blocks known malicious request patterns including Log4JRCE and other commonly exploited payloads. |
+| 40 | `AWSManagedRulesSQLiRuleSet` | SQL injection protection that detects and blocks SQLi attack patterns in query strings, headers, and request bodies. |
+| 50 | `AWSManagedRulesLinuxRuleSet` | Blocks attack patterns targeting Linux-specific vulnerabilities, including LFI attempts. |
+| 60 | `AWSManagedRulesUnixRuleSet` | Blocks attack patterns targeting Unix OS-specific vulnerabilities. |
+
+## Override the default rule set list
+
+Set `managed_rules` to replace the defaults with your own list. Each entry must include `name`, `priority`, `override_action`, `vendor_name`, and `rule_action_override`:
+
+```hcl
+module "wafv2" {
+  source  = "trussworks/wafv2/aws"
+  version = "0.0.1"
+
+  name  = "alb-web-acl"
+  scope = "REGIONAL"
+
+  managed_rules = [
+    {
+      name                 = "AWSManagedRulesCommonRuleSet"
+      priority             = 10
+      override_action      = "none"
+      vendor_name          = "AWS"
+      rule_action_override = []
+    },
+    {
+      name                 = "AWSManagedRulesSQLiRuleSet"
+      priority             = 20
+      override_action      = "none"
+      vendor_name          = "AWS"
+      rule_action_override = []
+    }
+  ]
+}
+```
+
+## Use count mode to monitor without blocking
+
+Set `override_action = "count"` on any rule group to switch it into monitoring mode. Requests that match rules in the group are counted and logged, but not blocked. Use this when introducing a new rule group to validate it does not affect legitimate traffic:
+
+```hcl
+managed_rules = [
+  {
+    name                 = "AWSManagedRulesCommonRuleSet"
+    priority             = 10
+    override_action      = "count"
+    vendor_name          = "AWS"
+    rule_action_override = []
+  }
+]
+```
+
+<Tip>
+  Enable count mode alongside logging to review which rules are matching before switching `override_action` back to `"none"` to enforce blocking.
+</Tip>
+
+## Override individual rule actions
+
+Use `rule_action_override` to selectively change the action for specific rules within a group without overriding the entire group. This is useful when a single rule causes false positives for your application:
+
+```hcl
+managed_rules = [
+  {
+    name            = "AWSManagedRulesCommonRuleSet"
+    priority        = 10
+    override_action = "none"
+    vendor_name     = "AWS"
+    rule_action_override = [
+      {
+        name          = "SizeRestrictions_BODY"
+        action_to_use = "allow"
+      }
+    ]
+  }
+]
+```
+
+Valid values for `action_to_use` are `"allow"`, `"block"`, and `"count"`.
+
+<Note>
+  `rule_action_override` takes precedence over `override_action`. You can keep the group in enforcing mode (`override_action = "none"`) while switching specific noisy rules to `"count"` for tuning.
+</Note>
+
+## Pin a rule group to a specific version
+
+AWS periodically releases new versions of managed rule groups. By default the module uses the latest static version. Use the optional `version` field to pin a rule group to a specific version for stability:
+
+```hcl
+managed_rules = [
+  {
+    name                 = "AWSManagedRulesCommonRuleSet"
+    priority             = 10
+    override_action      = "none"
+    vendor_name          = "AWS"
+    version              = "Version_1.12"
+    rule_action_override = []
+  }
+]
+```
+
+<Warning>
+  Pinned versions are eventually deprecated by AWS. Review your pinned versions periodically and update them to avoid using end-of-life rule definitions.
+</Warning>

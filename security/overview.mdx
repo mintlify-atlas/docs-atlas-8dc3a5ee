@@ -1,0 +1,188 @@
+---
+title: "Security overview"
+description: "Security best practices and architecture for terraform-aws-wafv2 deployments"
+---
+
+## Defense in depth
+
+WAFv2 is one layer in a broader security architecture. The `terraform-aws-wafv2` module protects your application at the HTTP layer, but it works alongside — not instead of — other AWS security controls:
+
+- **Security Groups** — control inbound and outbound traffic at the instance and load balancer level
+- **Network ACLs (NACLs)** — stateless subnet-level traffic filtering
+- **IAM** — enforce least-privilege access to AWS resources
+- **AWS Shield** — DDoS protection at the network and transport layers
+- **VPC flow logs** — network-level visibility for incident response
+
+Relying on any single control is insufficient. Configure WAFv2 as part of a layered approach where each layer assumes the others may be bypassed.
+
+## Default security posture
+
+The module ships with six AWS Managed Rule Sets enabled at `override_action = "none"` (enforce mode) and `default_action = "allow"`.
+
+| Rule set | Priority | Purpose |
+|---|---|---|
+| `AWSManagedRulesCommonRuleSet` | 10 | Core rule set (CRS) — common web exploits |
+| `AWSManagedRulesAmazonIpReputationList` | 20 | Known malicious IP addresses |
+| `AWSManagedRulesKnownBadInputsRuleSet` | 30 | Known bad inputs and request patterns |
+| `AWSManagedRulesSQLiRuleSet` | 40 | SQL injection attacks |
+| `AWSManagedRulesLinuxRuleSet` | 50 | Linux-specific attack patterns |
+| `AWSManagedRulesUnixRuleSet` | 60 | Unix-specific attack patterns |
+
+With `default_action = "allow"`, any request that does not match a blocking rule is passed through to your application. This is the standard posture for web applications where you want to intercept known-bad traffic while allowing legitimate traffic.
+
+<Note>
+All six rule sets are enforced by default (`override_action = "none"`). To adopt a module without disrupting existing traffic, temporarily set `override_action = "count"` on each rule and review CloudWatch metrics before switching to enforce.
+</Note>
+
+## Recommended security practices
+
+### Use count mode in non-production environments
+
+Before enforcing rules in production, deploy with `override_action = "count"` in your test and staging environments. This lets WAFv2 evaluate requests and log matches without blocking traffic, giving you time to identify false positives.
+
+```hcl
+managed_rules = [
+  {
+    name            = "AWSManagedRulesCommonRuleSet"
+    priority        = 10
+    override_action = "count"  # monitor only — switch to "none" to enforce
+    vendor_name     = "AWS"
+    rule_action_override = []
+  }
+]
+```
+
+Once you have reviewed sampled requests and confirmed the rule does not block legitimate traffic, change `override_action` to `"none"`.
+
+### Enable IP rate limiting
+
+Use the `ip_rate_based_rule` variable to limit the number of requests a single IP can make within a 5-minute window. This mitigates DDoS attacks and brute-force login attempts.
+
+```hcl
+ip_rate_based_rule = {
+  name     = "ip-rate-limit"
+  priority = 7
+  action   = "block"
+  limit    = 2000
+}
+```
+
+<Tip>
+Start with a high limit (e.g., 2000 requests per 5 minutes) and `action = "count"` to establish a baseline before lowering the threshold and switching to `"block"`.
+</Tip>
+
+### Enable logging
+
+Set `enable_logging = true` and provide one or more log destination ARNs (Kinesis Data Firehose, CloudWatch Logs, or S3). WAFv2 logs include the full request details and which rule matched, which is essential for security monitoring and incident response.
+
+```hcl
+module "wafv2" {
+  source = "trussworks/wafv2/aws"
+
+  name           = "my-waf"
+  scope          = "REGIONAL"
+  enable_logging = true
+  log_destination_arns = [
+    aws_cloudwatch_log_group.waf.arn
+  ]
+}
+```
+
+<Warning>
+Logs are not enabled by default (`enable_logging = false`). Without logs, you have no record of blocked requests or rule matches. Enable logging in all environments that handle sensitive data or require audit trails.
+</Warning>
+
+### Pin rule set versions
+
+AWS periodically updates Managed Rule Sets. New versions can introduce false positives that block legitimate traffic. Use the `version` field on each managed rule to pin to a known-good version.
+
+```hcl
+{
+  name            = "AWSManagedRulesCommonRuleSet"
+  priority        = 10
+  override_action = "none"
+  vendor_name     = "AWS"
+  version         = "Version_1.5"
+  rule_action_override = []
+}
+```
+
+Review AWS release notes when upgrading rule set versions, and test in a non-production environment first.
+
+### Review metrics and sampled requests regularly
+
+Schedule periodic reviews of:
+
+- **CloudWatch metrics** — rule match counts over time, anomalies in blocked request rates
+- **Sampled requests** — inspect the actual requests that matched each rule to identify false positives or emerging attack patterns
+- **Blocked IP addresses** — review rate-limited IPs to understand if limits need adjustment
+
+## Changing the default action to block
+
+For APIs where only a known set of clients should be allowed, you can set `default_action = "block"` to deny any request that does not explicitly match an allow rule.
+
+```hcl
+module "wafv2" {
+  source = "trussworks/wafv2/aws"
+
+  name           = "my-api-waf"
+  scope          = "REGIONAL"
+  default_action = "block"
+
+  ip_sets_rule = [
+    {
+      name       = "allow-trusted-ips"
+      priority   = 1
+      action     = "allow"
+      ip_set_arn = aws_wafv2_ip_set.trusted.arn
+    }
+  ]
+}
+```
+
+<Warning>
+Setting `default_action = "block"` will deny all traffic that does not match an explicit allow rule — including your own clients if they are not covered by an IP set or other allow rule. Test thoroughly before deploying to production.
+</Warning>
+
+This pattern is well-suited for internal APIs, machine-to-machine services, or any endpoint where the population of legitimate callers is small and well-defined.
+
+## CloudWatch metrics
+
+The module sets `cloudwatch_metrics_enabled = true` and `sampled_requests_enabled = true` on the Web ACL itself and on every rule — managed rules, IP set rules, rate-based rules, URL-based rate rules, filtered header rules, and group rules.
+
+This means every rule match is recorded in CloudWatch without any additional configuration. Metrics are published under the `AWS/WAFV2` namespace using the rule name as the `MetricName` dimension.
+
+<Note>
+Sampled requests are retained for up to three hours by default. For longer retention, enable WAFv2 logging to a CloudWatch Logs log group or S3 bucket.
+</Note>
+
+## Visibility config
+
+Every rule in the module includes a `visibility_config` block:
+
+```hcl
+visibility_config {
+  cloudwatch_metrics_enabled = true
+  metric_name                = rule.value.name
+  sampled_requests_enabled   = true
+}
+```
+
+This is applied consistently across all rule types, ensuring that no rule is invisible to your monitoring stack. If you need to reduce metric volume in cost-sensitive environments, you can override specific rules using `rule_action_override` or by defining custom `managed_rules` with adjusted visibility settings.
+
+## Related guides
+
+<CardGroup cols={2}>
+  <Card title="Custom rule groups" icon="shield" href="/security/rule-groups">
+    Use custom WAFv2 rule groups to share rules across multiple Web ACLs.
+  </Card>
+  <Card title="IP rate limiting" icon="gauge" href="/guides/rate-limiting">
+    Configure rate-based rules to throttle abusive traffic per IP address.
+  </Card>
+  <Card title="Managed rules" icon="list-check" href="/guides/managed-rules">
+    Customize and override AWS Managed Rule Sets for your application.
+  </Card>
+  <Card title="Logging" icon="file-text" href="/guides/logging">
+    Send WAFv2 logs to CloudWatch, Kinesis, or S3 for auditing and alerting.
+  </Card>
+</CardGroup>

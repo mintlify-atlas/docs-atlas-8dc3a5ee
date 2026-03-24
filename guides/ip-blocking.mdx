@@ -1,0 +1,134 @@
+---
+title: "Blocking requests with IP sets"
+description: "How to use the ip_sets_rule variable to allow, block, or count requests from specific IP addresses or CIDR ranges."
+---
+
+IP set rules let you allow, block, or count HTTP requests that originate from a specific set of IP addresses or CIDR ranges. The module accepts any number of IP set rules through the `ip_sets_rule` variable, each pointing to an `aws_wafv2_ip_set` resource that you manage separately.
+
+## Create an IP set
+
+First, define the IP set in your Terraform configuration:
+
+```hcl
+resource "aws_wafv2_ip_set" "blocked_ips" {
+  name               = "blocked_ips"
+  scope              = "REGIONAL"
+  ip_address_version = "IPV4"
+  addresses = [
+    "1.2.3.4/32",
+    "5.6.7.8/32"
+  ]
+}
+```
+
+<Note>
+  Set `scope` on the `aws_wafv2_ip_set` resource to match the scope of your Web ACL — `REGIONAL` for ALB or `CLOUDFRONT` for CloudFront distributions.
+</Note>
+
+## Variable type definition
+
+Each entry in `ip_sets_rule` is an object with the following attributes:
+
+| Attribute | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | A unique name for the rule within the Web ACL. |
+| `priority` | `number` | Yes | Evaluation order. Lower values are evaluated first. Must be unique across all rules. |
+| `ip_set_arn` | `string` | Yes | The ARN of the `aws_wafv2_ip_set` resource to reference. |
+| `action` | `string` | Yes | The action to take. Valid values: `"block"`, `"allow"`, `"count"`. |
+| `response_code` | `number` | No | HTTP status code returned when `action = "block"`. Defaults to `403`. |
+
+## Full working example
+
+```hcl
+resource "aws_wafv2_ip_set" "blocked_ips" {
+  name               = "blocked_ips"
+  scope              = "REGIONAL"
+  ip_address_version = "IPV4"
+  addresses = [
+    "1.2.3.4/32",
+    "5.6.7.8/32"
+  ]
+}
+
+module "wafv2" {
+  source = "trussworks/wafv2/aws"
+  name   = "wafv2"
+  scope  = "REGIONAL"
+
+  ip_sets_rule = [
+    {
+      name       = "blocked_ips"
+      action     = "block"
+      priority   = 1
+      ip_set_arn = aws_wafv2_ip_set.blocked_ips.arn
+    }
+  ]
+}
+```
+
+## Action values
+
+- **`block`** — Returns an HTTP error response to the client. The default response code is `403`, but you can override it with `response_code`.
+- **`allow`** — Forwards the request to the protected resource, skipping any lower-priority rules.
+- **`count`** — Increments a counter and continues evaluating subsequent rules. Use `count` to test a rule before enforcing it.
+
+## Custom response codes
+
+When `action = "block"`, you can return a non-default HTTP status code:
+
+```hcl
+ip_sets_rule = [
+  {
+    name          = "blocked_ips"
+    action        = "block"
+    priority      = 1
+    ip_set_arn    = aws_wafv2_ip_set.blocked_ips.arn
+    response_code = 429
+  }
+]
+```
+
+## Multiple IP set rules
+
+You can define multiple rules in `ip_sets_rule`, each referencing a different IP set. This is useful when you want to apply different actions to different address groups:
+
+```hcl
+resource "aws_wafv2_ip_set" "allow_list" {
+  name               = "allow_list"
+  scope              = "REGIONAL"
+  ip_address_version = "IPV4"
+  addresses          = ["10.0.0.0/8"]
+}
+
+resource "aws_wafv2_ip_set" "block_list" {
+  name               = "block_list"
+  scope              = "REGIONAL"
+  ip_address_version = "IPV4"
+  addresses          = ["198.51.100.0/24"]
+}
+
+module "wafv2" {
+  source = "trussworks/wafv2/aws"
+  name   = "wafv2"
+  scope  = "REGIONAL"
+
+  ip_sets_rule = [
+    {
+      name       = "allow_internal"
+      action     = "allow"
+      priority   = 1
+      ip_set_arn = aws_wafv2_ip_set.allow_list.arn
+    },
+    {
+      name       = "block_bad_actors"
+      action     = "block"
+      priority   = 2
+      ip_set_arn = aws_wafv2_ip_set.block_list.arn
+    }
+  ]
+}
+```
+
+<Tip>
+  Assign allow rules a lower priority number than block rules when you want to ensure that trusted IPs are never inadvertently blocked by a broader block rule evaluated later.
+</Tip>

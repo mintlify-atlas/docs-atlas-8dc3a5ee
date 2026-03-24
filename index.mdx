@@ -1,97 +1,100 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "terraform-aws-wafv2"
+description: "A Terraform module that creates and configures AWS WAFv2 Web ACLs with managed rule sets, IP blocking, rate limiting, and ALB/CloudFront integration."
 ---
 
-## Setting up
-
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Deploy your first WAFv2 Web ACL in minutes
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Module Inputs" icon="sliders" href="/reference/inputs">
+    Full reference for all module variables
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="ALB Integration" icon="network-wired" href="/guides/alb">
+    Protect Application Load Balancers
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CloudFront Integration" icon="globe" href="/guides/cloudfront">
+    Protect CloudFront distributions
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What is terraform-aws-wafv2?
 
-Everything you need to create world-class documentation.
+`terraform-aws-wafv2` is a Terraform module by [TrussWorks](https://github.com/trussworks) that provisions an AWS WAFv2 Web ACL with sensible defaults and full configurability. It supports both **REGIONAL** (ALB) and **CLOUDFRONT** scopes, and ships with AWS Managed Rule Sets enabled out of the box.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Info>
+  This module requires Terraform `>= 1.0` and the AWS provider `>= 5.0`.
+</Info>
 
-## Need inspiration?
+## Key features
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="AWS Managed Rule Sets" icon="shield-check">
+    Includes CommonRuleSet, SQLi, IP Reputation, KnownBadInputs, Linux, and Unix rule sets by default
+  </Card>
+  <Card title="IP Set blocking" icon="ban">
+    Block or count requests from specific IPv4/IPv6 addresses and CIDR ranges
+  </Card>
+  <Card title="Rate limiting" icon="gauge-high">
+    Global and URL-scoped per-IP rate limiting with configurable thresholds and response codes
+  </Card>
+  <Card title="Header filtering" icon="filter">
+    Match and act on HTTP header values using byte match statements
+  </Card>
+  <Card title="Rule group support" icon="layer-group">
+    Attach custom WAFv2 Rule Groups alongside managed rules
+  </Card>
+  <Card title="CloudWatch logging" icon="chart-line">
+    Stream WAF logs to CloudWatch Log Groups, Kinesis Firehose, or S3
+  </Card>
+</CardGroup>
+
+## How it works
+
+The module creates an `aws_wafv2_web_acl` resource and optionally:
+
+- Associates it with an ALB via `aws_wafv2_web_acl_association`
+- Configures logging via `aws_wafv2_web_acl_logging_configuration`
+
+Rules are evaluated in priority order. The **default action** (allow or block) applies to any request that does not match a rule.
+
+```hcl main.tf
+module "wafv2" {
+  source  = "trussworks/wafv2/aws"
+  version = "~> 3.0"
+
+  name  = "my-web-acl"
+  scope = "REGIONAL"
+
+  associate_alb = true
+  alb_arn       = aws_lb.main.arn
+}
+```
+
+## Supported scopes
+
+| Scope | Use case | AWS provider region |
+|-------|----------|---------------------|
+| `REGIONAL` | ALB, API Gateway, AppSync | Any region |
+| `CLOUDFRONT` | CloudFront distributions | Must be `us-east-1` |
+
+<Warning>
+  When using `scope = "CLOUDFRONT"`, the AWS provider must be configured with `region = "us-east-1"`. CloudFront WAF resources are global and only available in that region.
+</Warning>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book" href="/introduction">
+    Learn about WAFv2 concepts and module architecture
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Deploy a WAF in under 5 minutes
+  </Card>
+  <Card title="Managed rules guide" icon="list-check" href="/guides/managed-rules">
+    Understand and customize the default rule sets
+  </Card>
+  <Card title="Security overview" icon="lock" href="/security/overview">
+    Security best practices for WAFv2 deployments
+  </Card>
+</CardGroup>

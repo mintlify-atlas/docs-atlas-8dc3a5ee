@@ -1,0 +1,27 @@
+---
+title: "Module outputs"
+description: "Outputs exposed by the terraform-aws-wafv2 module"
+---
+
+<ResponseField name="web_acl_id" type="string">
+  The ARN of the WAF WebACL. Despite the name `web_acl_id`, the value is the full ARN of the `aws_wafv2_web_acl` resource, not a short ID.
+</ResponseField>
+
+## Usage
+
+### Attach to a CloudFront distribution
+
+```hcl
+resource "aws_cloudfront_distribution" "main" {
+  web_acl_id = module.wafv2.web_acl_id
+  # ...
+}
+```
+
+### Re-export from the root module
+
+```hcl
+output "waf_arn" {
+  value = module.wafv2.web_acl_id
+}
+```
